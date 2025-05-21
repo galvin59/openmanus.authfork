@@ -47,21 +47,30 @@ temperature = 0.0                          # Controls randomness for vision mode
 # max_tokens = 4096
 # temperature = 0.0
 
-# Optional configuration for specific browser configuration
-# [browser]
+# Browser configuration
+[browser]
 # Whether to run browser in headless mode (default: false)
-#headless = false
+# headless = false
+
+# Path to store and load cookies for session persistence
+# Default: ~/.openmanus/cookies.json
+cookies_file_path = "~/.openmanus/cookies.json"
+
 # Disable browser security features (default: true)
-#disable_security = true
+# disable_security = true
+
 # Extra arguments to pass to the browser
-#extra_chromium_args = []
+# extra_chromium_args = []
+
 # Path to a Chrome instance to use to connect to your normal browser
 # e.g. '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-#chrome_instance_path = ""
+# chrome_instance_path = ""
+
 # Connect to a browser instance via WebSocket
-#wss_url = ""
+# wss_url = ""
+
 # Connect to a browser instance via CDP
-#cdp_url = ""
+# cdp_url = ""
 
 # Optional configuration, Proxy settings for the browser
 # [browser.proxy]

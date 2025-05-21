@@ -1,6 +1,17 @@
 <p align="center">
-  <img src="assets/logo.jpg" width="200"/>
+  <img src="assets/logo.jpg" alt="OpenManus Logo" width="200">
 </p>
+
+## 🛡️ About This Fork
+
+> **Note: Custom Fork**  
+> This is a customized fork of OpenManus with enhanced security features.  
+> 
+> **Key Additions:**
+> 1. **Secure Credentials Management** - Store and manage sensitive credentials securely
+> 2. **Session Persistence** - Maintain browser sessions across restarts
+> 
+> [Original Project](https://github.com/mannaandpoem/OpenManus) | [View Changes](#secure-credentials--session-management)
 
 English | [中文](README_zh.md) | [한국어](README_ko.md) | [日本語](README_ja.md)
 
@@ -22,6 +33,95 @@ It's a simple implementation, so we welcome any suggestions, contributions, and 
 Enjoy your own agent with OpenManus!
 
 We're also excited to introduce [OpenManus-RL](https://github.com/OpenManus/OpenManus-RL), an open-source project dedicated to reinforcement learning (RL)- based (such as GRPO) tuning methods for LLM agents, developed collaboratively by researchers from UIUC and OpenManus.
+
+## Secure Credentials & Session Management
+
+This fork enhances OpenManus with additional security features for production use.
+
+### Features
+
+- **Secure Credential Storage**
+  - Store API keys, passwords, and tokens securely
+  - Environment-based configuration
+  - Automatic secret redaction in logs
+
+- **Session Persistence**
+  - Maintain browser sessions across restarts
+  - Secure cookie storage
+  - Configurable session management
+
+### Quick Start
+
+1. **Set up credentials**:
+   ```bash
+   cp config/credentials.example.ini config/credentials.ini
+   chmod 600 config/credentials.ini
+   ```
+   Edit `config/credentials.ini` with your credentials.
+
+2. **Configure session persistence** in `config.toml`:
+   ```toml
+   [browser]
+   cookies_file_path = "~/.openmanus/cookies.json"
+   ```
+
+3. **Use in your code**:
+   ```python
+   # Reference credentials in your code
+   api_key = "#service_key#"  # Will be replaced with actual value
+   ```
+
+### Usage in Prompts
+
+Reference stored credentials using the `#service_key#` syntax:
+
+```
+Open Facebook at https://www.facebook.com and log in using the email #facebook_email# and password #facebook_password#
+```
+
+### Available CLI Commands
+
+#### List all credentials
+```bash
+python scripts/credentials_cli.py list
+```
+
+#### Set a credential
+```bash
+python scripts/credentials_cli.py set <service> <key> <value>
+```
+
+#### Get a credential
+```bash
+python scripts/credentials_cli.py get <service> <key>
+```
+
+#### Delete a credential
+```bash
+python scripts/credentials_cli.py delete <service> <key>
+```
+
+### Security Considerations
+
+- Credentials are stored with restricted file permissions (600)
+- Cookie files contain sensitive session information
+- All sensitive data is automatically redacted from logs
+- Never commit `credentials.ini` to version control
+
+### Troubleshooting
+
+#### Reset Configuration
+```bash
+rm config/credentials.ini
+python scripts/credentials_cli.py init
+```
+
+#### Check File Permissions
+```bash
+chmod 600 config/credentials.ini
+```
+
+---
 
 ## Project Demo
 

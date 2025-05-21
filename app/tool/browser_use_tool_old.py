@@ -168,27 +168,30 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         return v
 
     async def _ensure_browser_initialized(self) -> BrowserContext:
-        """Ensure browser and context are initialized, using cookies_file for persistence if configured."""
+        """Ensure browser and context are initialized with persistent storage."""
         if self.browser is None:
             browser_config_kwargs = {
-                # Default values, can be overridden by config
                 "headless": False,
                 "disable_security": True,
             }
 
-            if config.browser_config:
+            if hasattr(config, 'browser_config') and config.browser_config:
                 from browser_use.browser.browser import ProxySettings
 
-                # Handle proxy settings
-                if config.browser_config.proxy and config.browser_config.proxy.server:
+                # handle proxy settings
+                if (hasattr(config.browser_config, 'proxy') and 
+                    config.browser_config.proxy and 
+                    hasattr(config.browser_config.proxy, 'server') and 
+                    config.browser_config.proxy.server):
+                    
                     browser_config_kwargs["proxy"] = ProxySettings(
                         server=config.browser_config.proxy.server,
-                        username=config.browser_config.proxy.username,
-                        password=config.browser_config.proxy.password,
+                        username=getattr(config.browser_config.proxy, 'username', ''),
+                        password=getattr(config.browser_config.proxy, 'password', ''),
                     )
 
-                # Apply standard browser attributes from config
-                browser_attrs_to_apply = [
+                # Add browser configuration attributes
+                browser_attrs = [
                     "headless",
                     "disable_security",
                     "extra_chromium_args",
@@ -196,58 +199,94 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     "wss_url",
                     "cdp_url",
                 ]
-                for attr in browser_attrs_to_apply:
-                    value = getattr(config.browser_config, attr, None)
-                    if value is not None:
-                        if not isinstance(value, list) or value:
-                            browser_config_kwargs[attr] = value
-            
-            # Initialize the browser with the constructed configuration
-            # No user_data_dir here as per previous error, persistence handled by BrowserContextConfig's cookies_file
+
+                for attr in browser_attrs:
+                    if hasattr(config.browser_config, attr):
+                        value = getattr(config.browser_config, attr)
+                        if value is not None:
+                            if not isinstance(value, list) or value:
+                                browser_config_kwargs[attr] = value
+
+            # Initialize the browser with the configuration
+            logging.info(f"Initializing browser with config: {browser_config_kwargs}")
             self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
 
         if self.context is None:
-            context_config_params = {}
-            # Apply any specific new_context_config from the main AppConfig
-            if (
-                config.browser_config
-                and config.browser_config.new_context_config
-                and isinstance(config.browser_config.new_context_config, dict)
-            ):
-                context_config_params.update(config.browser_config.new_context_config)
-            
-            # Configure cookies_file for session persistence if path is provided
-            if config.browser_config and config.browser_config.cookies_file_path:
-                cookies_path_str = os.path.expanduser(config.browser_config.cookies_file_path)
-                logging.info(f"Configuring cookies file path: {cookies_path_str}")
-                # Ensure the directory for the cookies file exists
-                cookies_dir = os.path.dirname(cookies_path_str)
-                if cookies_dir:  # Only create if path is not just a filename in cwd
-                    os.makedirs(cookies_dir, exist_ok=True, mode=0o700)  # Secure directory permissions
-                    logging.info(f"Created cookies directory: {cookies_dir}")
-                    
-                    # Check directory permissions
-                    if not os.access(cookies_dir, os.W_OK):
-                        logging.error(f"Directory {cookies_dir} is not writable. Cookies will not be saved.")
-                    else:
-                        logging.info(f"Directory {cookies_dir} is writable.")
-                
-                context_config_params["cookies_file"] = cookies_path_str
-                logging.info(f"Browser context will use cookies file for persistence: {cookies_path_str}")
-                
-                # Set secure file permissions for the cookies file if it exists
-                if os.path.exists(cookies_path_str):
-                    try:
-                        os.chmod(cookies_path_str, 0o600)  # Read/write for owner only
-                    except Exception as e:
-                        logging.warning(f"Could not set permissions for cookies file: {str(e)}")
-            else:
-                logging.warning("No cookies file path configured. Session will not be persistent across runs.")
+            # Create a new context configuration
+            context_config = BrowserContextConfig()
 
-            context_config = BrowserContextConfig(**context_config_params)
-            
-            self.context = await self.browser.new_context(context_config)
-            self.dom_service = DomService(await self.context.get_current_page())
+            # Apply any existing context configuration from the config
+            if (hasattr(config, 'browser_config') and 
+                hasattr(config.browser_config, "new_context_config") and 
+                config.browser_config.new_context_config):
+                context_config = config.browser_config.new_context_config
+
+            # Configure persistent storage if enabled
+            if (hasattr(config, 'browser_config') and 
+                hasattr(config.browser_config, 'persistent_context') and 
+                config.browser_config.persistent_context):
+                
+                # Get or create the user data directory
+                user_data_dir = getattr(config.browser_config, "user_data_dir", "~/.openmanus/browser_data")
+                user_data_dir = os.path.expanduser(user_data_dir)
+                logging.info(f"[DEBUG] Creating/verifying user data directory: {user_data_dir}")
+                os.makedirs(user_data_dir, exist_ok=True, mode=0o700)  # Secure directory permissions
+                logging.info(f"[DEBUG] Directory permissions: {oct(os.stat(user_data_dir).st_mode)[-3:]}")
+                logging.info(f"[DEBUG] Directory exists: {os.path.exists(user_data_dir)}")
+                logging.info(f"[DEBUG] Directory writable: {os.access(user_data_dir, os.W_OK)}")
+                
+                # Set the user data directory for persistent storage
+                context_config.user_data_dir = user_data_dir
+                
+                # Set path for storing browser state
+                state_file = os.path.join(user_data_dir, 'state.json')
+                context_config.storage_state_path = state_file
+                
+                logging.info(f"[DEBUG] Using persistent browser data directory: {user_data_dir}")
+                logging.info(f"[DEBUG] State file path: {state_file}")
+                logging.info(f"[DEBUG] State file exists: {os.path.exists(state_file)}")
+                if os.path.exists(state_file):
+                    logging.info(f"[DEBUG] State file size: {os.path.getsize(state_file)} bytes")
+                
+                # Check if we have a saved state and load it
+                if os.path.exists(state_file):
+                    try:
+                        logging.info("Loading existing browser state")
+                        with open(state_file, 'r') as f:
+                            storage_state = json.load(f)
+                        context_config.storage_state = storage_state
+                        logging.info("Browser state loaded successfully")
+                    except Exception as e:
+                        logging.error(f"Failed to load browser state: {e}")
+                        # Continue without loading state if there's an error
+
+            # Create the browser context with the configuration
+            try:
+                self.context = await self.browser.new_context(context_config)
+                logging.info("Browser context created successfully")
+                
+                # Save the initial state after creating the context
+                if (hasattr(config, 'browser_config') and 
+                    hasattr(config.browser_config, 'persistent_context') and 
+                    config.browser_config.persistent_context and
+                    hasattr(context_config, 'storage_state_path')):
+                    
+                    logging.info(f"[DEBUG] Saving browser state to: {context_config.storage_state_path}")
+                    
+                    try:
+                        storage_state = await self.context.storage_state(path=context_config.storage_state_path)
+                        logging.info("Initial browser state saved")
+                    except Exception as e:
+                        logging.error(f"Failed to save initial browser state: {e}")
+                
+                self.dom_service = DomService(await self.context.get_current_page())
+                
+            except Exception as e:
+                logging.error(f"Failed to create browser context: {e}")
+                if self.context:
+                    await self.context.close()
+                    self.context = None
+                raise
 
         return self.context
 
@@ -597,44 +636,43 @@ Page content:
             return ToolResult(error=f"Failed to get browser state: {str(e)}")
 
     async def cleanup(self):
-        """Clean up browser resources and save cookies."""
-        async with self.lock:
-            try:
-                # Save cookies before closing the context
-                if self.context is not None and hasattr(self.context, 'save_cookies'):
+        """Clean up browser resources and save state if persistent storage is enabled."""
+        try:
+            if self.context:
+                # Save the browser state before closing if persistent storage is enabled
+                if (hasattr(config, 'browser_config') and 
+                    hasattr(config.browser_config, 'persistent_context') and 
+                    config.browser_config.persistent_context and
+                    hasattr(self.context, 'storage_state_path')):
+                    
                     try:
-                        await self.context.save_cookies()
-                        logging.info("Cookies saved successfully before cleanup")
+                        storage_state = await self.context.storage_state(path=self.context.storage_state_path)
+                        logging.info("Browser state saved before cleanup")
                     except Exception as e:
-                        logging.error(f"Failed to save cookies during cleanup: {str(e)}")
+                        logging.error(f"Error saving browser state: {e}")
                 
-                # Close the context and browser
-                if self.context is not None:
+                # Close the context
+                try:
                     await self.context.close()
+                    logging.info("Browser context closed successfully")
+                except Exception as e:
+                    logging.error(f"Error closing browser context: {e}")
+                finally:
                     self.context = None
                     self.dom_service = None
-                    
-                if self.browser is not None:
-                    await self.browser.close()
-                    self.browser = None
-                    
-            except Exception as e:
-                logging.error(f"Error during cleanup: {str(e)}")
-                raise
                 
-    async def save_cookies(self) -> bool:
-        """Manually save cookies to the configured file."""
-        if not self.context or not hasattr(self.context, 'save_cookies'):
-            logging.warning("Context not initialized or does not support save_cookies")
-            return False
-        
-        try:
-            await self.context.save_cookies()
-            logging.info("Cookies saved successfully")
-            return True
+            # Close the browser
+            if self.browser:
+                try:
+                    await self.browser.close()
+                    logging.info("Browser closed successfully")
+                except Exception as e:
+                    logging.error(f"Error closing browser: {e}")
+                finally:
+                    self.browser = None
         except Exception as e:
-            logging.error(f"Failed to save cookies: {str(e)}")
-            return False
+            logging.error(f"Error during browser cleanup: {e}")
+            raise
 
     def __del__(self):
         """Ensure cleanup when object is destroyed."""

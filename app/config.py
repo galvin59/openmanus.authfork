@@ -83,6 +83,12 @@ class BrowserSettings(BaseModel):
     max_content_length: int = Field(
         2000, description="Maximum length for content retrieval operations"
     )
+    cookies_file_path: Optional[str] = Field(
+        None, description="Path to store and load cookies for session persistence, e.g., ~/.openmanus/cookies.json"
+    )
+    new_context_config: Optional[Dict] = Field(
+        None, description="Additional configuration options for new browser contexts, passed to BrowserContextConfig. cookies_file_path will override any 'cookies_file' here."
+    )
 
 
 class SandboxSettings(BaseModel):

@@ -1,4 +1,7 @@
 ### Project-specific ###
+# Credentials
+config/credentials.ini
+
 # Logs
 logs/
 
